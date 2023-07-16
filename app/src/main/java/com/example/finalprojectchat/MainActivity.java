@@ -16,9 +16,14 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.text.SimpleDateFormat;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -32,7 +37,8 @@ public class MainActivity extends AppCompatActivity {
     private EditText editText;
     private DatabaseReference dbr;
     private String strMessage;
-    private byte encryptionKey[] = {1,2,3,4};
+    //private byte encryptionKey[] = {1,2,3,4};
+    private byte[] encryptionKey = new byte[16]; // 128 bits
     private Cipher cipher, decipher;
     private SecretKeySpec secretKeySpec;
 
@@ -58,22 +64,40 @@ public class MainActivity extends AppCompatActivity {
         dbr.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
-                strMessage = dataSnapshot.getValue(String.class);
-                strMessage = strMessage.substring(1,strMessage.length()-1);
+                if (dataSnapshot.exists()) {
+                    HashMap<String, Object> dataMap = (HashMap<String, Object>) dataSnapshot.getValue();
+                    if (dataMap != null) {
+                        StringBuilder strBuilder = new StringBuilder();
 
-                String[] strMessageArr = strMessage.split(", ");
-                String[] strFinal = new String[strMessageArr.length*2];
-                for(int i = 0; i < strMessageArr.length; i++){
-                    String[] strKeyValue = strMessageArr[i].split("-", 2);
-                    strFinal[i*2] = (String)android.text.format.DateFormat.format("dd-MM-YYYY hh:mm:ss", Long.parseLong(strKeyValue[0]));
-                    try {
-                        strFinal[i*2+1] = AESDecriprion(strKeyValue[1]);
-                    } catch (UnsupportedEncodingException e) {
-                        throw new RuntimeException(e);
+                        for (Map.Entry<String, Object> entry : dataMap.entrySet()) {
+                            String timestamp = entry.getKey();
+                            String message = entry.getValue().toString();
+                            try {
+                                message = AESDecriprion(message);
+                            } catch (UnsupportedEncodingException e) {
+                                throw new RuntimeException(e);
+                            }
+                            long timestampMillis = Long.parseLong(timestamp);
+                            String formattedTimestamp = formatTimestamp(timestampMillis);
+
+                            // Append the formatted message to the string builder
+                            String formattedMessage = formattedTimestamp + ": " + message;
+                            strBuilder.append(formattedMessage).append("\n");
+                        }
+
+                        String strMessage = strBuilder.toString();
+                        // Now you can use strMessage as needed
+
+                        // For example, if you want to update the ListView:
+                        String[] strFinal = strMessage.split("\n");
+                        listView.setAdapter(new ArrayAdapter<String>(MainActivity.this, android.R.layout.simple_list_item_1, strFinal));
                     }
+                } else {
+                    // Handle the case when the "Message" node doesn't exist or the value is null
                 }
-                listView.setAdapter(new ArrayAdapter<String>(MainActivity.this, android.R.layout.simple_list_item_1, strFinal));
             }
+
+
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
@@ -85,6 +109,11 @@ public class MainActivity extends AppCompatActivity {
     public void findViews(){
         editText = findViewById(R.id.editText);
         listView = findViewById(R.id.listView);
+    }
+
+    private String formatTimestamp(long timestampMillis) {
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        return dateFormat.format(new Date(timestampMillis));
     }
 
     public void sendButton(View view){
